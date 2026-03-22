@@ -73,7 +73,7 @@ def main():
     args = parser.parse_args()
 
     if not os.path.exists(args.input):
-        print(f"❌ קובץ לא נמצא: {args.input}", flush=True)
+        print(f"❌ File not found: {args.input}", flush=True)
         sys.exit(1)
 
     with open(args.input, encoding="utf-8") as f:
@@ -82,8 +82,8 @@ def main():
     segments = extract_segments(data)
 
     if not segments:
-        print("⚠️ לא נמצאו segments בקובץ ה-JSON", flush=True)
-        print("  נסה לבדוק את המבנה ידנית", flush=True)
+        print("⚠️ No segments found in JSON file", flush=True)
+        print("  Try checking the structure manually", flush=True)
         sys.exit(1)
 
     # determine diarization mode
@@ -105,8 +105,8 @@ def main():
         f.write(content)
 
     char_count = len(content)
-    mode = "דוברים" if use_diarization else "טקסט רגיל"
-    print(f"📄 {output_path} ({char_count:,} תווים, {mode})", flush=True)
+    mode = "speakers" if use_diarization else "plain text"
+    print(f"📄 {output_path} ({char_count:,} chars, {mode})", flush=True)
 
 
 if __name__ == "__main__":

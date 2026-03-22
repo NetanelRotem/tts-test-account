@@ -33,18 +33,7 @@ Ask the user these two questions **together in one message** — don't ask one a
 
 If the user said "תמלל את זה" with a file attached/linked — just confirm format and run.
 
-## Step 2: Check for duration detection tools
-
-Before running, mention once:
-
-> כדי לחשב נכון כמה זמן לחכות לתוצאה, הסקריפט צריך לדעת את אורך הקובץ.
-> הדרך הטובה ביותר היא שיהיה מותקן **ffprobe** (חלק מ-ffmpeg) או **moviepy**.
-> אם אף אחד מהם לא מותקן — הסקריפט עדיין יעבוד, הוא פשוט יפול כל 4 שניות.
-
-Suggest if needed: `pip install moviepy` or install ffmpeg from ffmpeg.org.
-Don't block on this — proceed even if they don't have either.
-
-## Step 3: Run the transcription script
+## Step 2: Run the transcription script
 
 Use `scripts/transcribe.py` (relative to this skill directory).
 
@@ -58,7 +47,7 @@ python scripts/transcribe.py \
   --output-path "<optional>"
 ```
 
-`--min-speakers` / `--max-speakers` — רלוונטי רק כש-`--diarization true`. ברירת מחדל: min=1, max=10.
+`--min-speakers` / `--max-speakers` — only relevant when `--diarization true`. Default: min=1, max=10.
 
 **The script always saves a JSON file first**, then converts to text if requested. You'll always get a `.json` backup regardless of format choice.
 
@@ -81,17 +70,17 @@ After the script finishes, report in **one line**:
 ```
 📄 transcript.json (X MB, Y segments) → <path>
 ```
-Or for text: `📄 transcript.txt (X,XXX תווים) → <path>`
+Or for text: `📄 transcript.txt (X,XXX chars) → <path>`
 
 Don't dump the file contents into the chat. If the user wants to see the content, read the file and show a relevant excerpt.
 
-**Validate**: if you see "ריק" or "0 bytes" in the output, go to Troubleshooting immediately.
+**Validate**: if you see "empty" or "0 bytes" in the output, go to Troubleshooting immediately.
 
 ---
 
 ## Troubleshooting
 
-### קובץ הפלט ריק (0 תווים)
+### Empty output file (0 chars)
 
 This usually means the API response had a different structure than expected.
 
@@ -102,11 +91,11 @@ This usually means the API response had a different structure than expected.
 2. Open the JSON file and look for where the text segments actually are
 3. Check the structure: is it `result.segments` or `result.result.segments`?
 
-### שגיאת 403 בהעלאה
+### 403 error on upload
 
-ה-signed URL ככל הנראה פג תוקף. הרץ מחדש מההתחלה.
+The signed URL likely expired. Re-run from the beginning.
 
-### שחזור תמלול עם Job ID קיים
+### Recover transcription with existing Job ID
 
 If the process was interrupted or the output file was lost, you can recover using the Job ID that was printed during the run:
 
@@ -125,13 +114,13 @@ curl -X POST https://us-central1-whisper-cloud-functions.cloudfunctions.net/chec
   -d '{"textopsJobId": "<JOB_ID>"}'
 ```
 
-### תהליך לקח יותר מדי זמן / timeout
+### Process took too long / timeout
 
 - The script polls for up to ~10 minutes (120 polls × 5s)
 - For files longer than 60 minutes with diarization, this may not be enough
 - Use `--job-id` to resume polling after a timeout
 
-### הסקריפט הדפיס "הושלם!" אבל הקובץ ריק
+### Script printed "Done!" but the file is empty
 
 Run with `--output-format json` and `--job-id` to see the raw API response and find where the content actually lives.
 
