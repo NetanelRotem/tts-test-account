@@ -91,8 +91,7 @@ def get_signed_urls(filename):
 def upload_file(upload_url, file_path, filename):
     log(f"[2/4] מעלה קובץ: {filename}...")
     with open(file_path, "rb") as f:
-        res = requests.put(upload_url, data=f,
-                           headers={"Content-Type": "application/octet-stream"})
+        res = requests.put(upload_url, data=f)
     if res.status_code == 403:
         log("❌ שגיאת 403 בהעלאה — ייתכן שה-signed URL פג תוקף, נסה שוב")
         sys.exit(1)
