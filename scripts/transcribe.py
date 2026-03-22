@@ -84,7 +84,7 @@ def calc_initial_wait(duration_sec, has_diarization):
 # ── upload (for local files) ─────────────────────────────────────────────────
 
 def get_signed_urls(filename):
-    log(f"[1/4] מקבל signed URL עבור: {filename}")
+    log(f"[1/4] Getting signed URL for: {filename}")
     res = requests.post(GET_UPLOAD_URL, json={"filename": filename},
                         headers={"textops-api-key": API_KEY})
     res.raise_for_status()
@@ -92,14 +92,14 @@ def get_signed_urls(filename):
 
 
 def upload_file(upload_url, file_path, filename):
-    log(f"[2/4] מעלה קובץ: {filename}...")
+    log(f"[2/4] Uploading file: {filename}...")
     with open(file_path, "rb") as f:
         res = requests.put(upload_url, data=f)
     if res.status_code == 403:
-        log("❌ שגיאת 403 בהעלאה — ייתכן שה-signed URL פג תוקף, נסה שוב")
+        log("❌ Upload error 403 — signed URL may have expired, try again")
         sys.exit(1)
     res.raise_for_status()
-    log("  העלאה הושלמה.")
+    log("  Upload complete.")
 
 
 # ── submit + poll ─────────────────────────────────────────────────────────────
@@ -111,24 +111,24 @@ def submit_job(download_url, has_diarization, word_timestamps=False, min_speaker
         "max_speakers": max_speakers,
         "word_timestamps": word_timestamps,
     }
-    log("[3/4] שולח job לעיבוד...")
+    log("[3/4] Submitting job for processing...")
     res = requests.post(SUBMIT_MODAL_URL,
                         json={"download_url": download_url, "params": params},
                         headers={"textops-api-key": API_KEY})
     res.raise_for_status()
     job_id = res.json()["textopsJobId"]
     log(f"  Job ID: {job_id}")
-    log(f"  שמור את ה-Job ID! אם התהליך נקטע, תוכל לשחזר עם: --job-id {job_id}")
+    log(f"  Save this Job ID! If the process is interrupted, resume with: --job-id {job_id}")
     return job_id
 
 
 def poll_job(job_id, initial_wait):
     if initial_wait is not None:
-        log(f"[4/4] ממתין {initial_wait:.0f} שניות לפני בדיקה ראשונה...")
+        log(f"[4/4] Waiting {initial_wait:.0f} seconds before first check...")
         time.sleep(initial_wait)
         interval = POLL_INTERVAL
     else:
-        log("[4/4] אורך לא ידוע — ממתין 10 שניות ומתחיל לפול...")
+        log("[4/4] Unknown duration — waiting 10 seconds before polling...")
         time.sleep(10)
         interval = 4
 
@@ -144,18 +144,18 @@ def poll_job(job_id, initial_wait):
         log(f"  [{attempt}] status: {status} | {progress}%")
 
         if data.get("has_error"):
-            log("\n❌ שגיאה בעיבוד:")
+            log("\n❌ Processing error:")
             log(str(data.get("user_messages") or data))
             sys.exit(1)
 
         if status == "done":
-            log("\n✅ הושלם!")
+            log("\n✅ Done!")
             return data
 
         time.sleep(interval)
 
-    log("⚠️ תם הזמן המקסימלי ללא תוצאה")
-    log(f"  ניתן לנסות שוב: python transcribe.py --job-id {job_id} ...")
+    log("⚠️ Maximum wait time exceeded without result")
+    log(f"  You can retry: python transcribe.py --job-id {job_id} ...")
     sys.exit(1)
 
 
@@ -180,9 +180,9 @@ def extract_segments(data):
         return segments
 
     # not found — print actual structure to help debug
-    log("\n⚠️ לא נמצאו segments בתשובה. מבנה התשובה בפועל:")
+    log("\n⚠️ No segments found in response. Actual response structure:")
     log(json.dumps(data, ensure_ascii=False, indent=2)[:2000])
-    log("\n  עצה: בדוק את המפתח שמכיל את הטקסט ושלח issue עם המבנה הזה")
+    log("\n  Tip: check the key that contains the text and open an issue with this structure")
     return []
 
 
@@ -194,7 +194,7 @@ def write_json(data, output_path):
         json.dump(result, f, ensure_ascii=False, indent=2)
     size = os.path.getsize(output_path)
     if size < 10:
-        log(f"⚠️ קובץ JSON ריק ({size} bytes) — תשובת ה-API לא הכילה תוכן")
+        log(f"⚠️ Empty JSON file ({size} bytes) — API response contained no content")
     return size
 
 
@@ -220,13 +220,13 @@ def main():
     args = parser.parse_args()
 
     if not API_KEY:
-        log("❌ חסר TEXTOPS_API_KEY — הגדר את המשתנה בסביבה ונסה שוב.")
+        log("❌ Missing TEXTOPS_API_KEY — set the environment variable and try again.")
         log("  Windows: set TEXTOPS_API_KEY=your_key")
         log("  Mac/Linux: export TEXTOPS_API_KEY=your_key")
         sys.exit(1)
 
     if not args.file and not args.job_id:
-        log("❌ נדרש --file או --job-id")
+        log("❌ Required: --file or --job-id")
         sys.exit(1)
 
     has_diarize      = args.diarization.lower() in ("true", "1", "yes")
@@ -251,14 +251,14 @@ def main():
 
     # ── resume from existing job ID ───────────────────────────────────────────
     if args.job_id:
-        log(f"🔄 ממשיך עם Job ID קיים: {args.job_id}")
+        log(f"🔄 Resuming with existing Job ID: {args.job_id}")
         data = poll_job(args.job_id, initial_wait=None)
     else:
         file_arg = args.file
         is_url   = file_arg.startswith("http://") or file_arg.startswith("https://")
 
         if is_url:
-            log(f"URL זוהה: {file_arg}")
+            log(f"URL detected: {file_arg}")
             download_url = file_arg
             duration_sec = None
         else:
@@ -270,7 +270,7 @@ def main():
 
         initial_wait = calc_initial_wait(duration_sec, has_diarize)
         if initial_wait:
-            log(f"  זמן המתנה משוער: {initial_wait:.0f} שניות")
+            log(f"  Estimated wait time: {initial_wait:.0f} seconds")
 
         job_id = submit_job(download_url, has_diarize, has_word_ts, min_speakers, max_speakers)
         data   = poll_job(job_id, initial_wait)
@@ -297,7 +297,7 @@ def main():
             log(f"⚠️ {result.stderr.strip()}")
         output_path = txt_path
 
-    log(f"\n✔ סיום. קובץ הפלט: {output_path}")
+    log(f"\n✔ Done. Output file: {output_path}")
 
 
 if __name__ == "__main__":
