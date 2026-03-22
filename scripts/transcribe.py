@@ -13,6 +13,9 @@ import sys
 import time
 import requests
 
+sys.stdout.reconfigure(encoding="utf-8")
+sys.stderr.reconfigure(encoding="utf-8")
+
 # ── API config ───────────────────────────────────────────────────────────────
 
 API_KEY = os.environ.get("TEXTOPS_API_KEY", "")
