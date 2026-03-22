@@ -30,8 +30,8 @@ def has_speaker_info(segments):
 
 
 def to_plain_text(segments):
-    """Join all segment texts into one block."""
-    return " ".join(
+    """Join all segment texts with line breaks between them."""
+    return "\n\n".join(
         seg.get("text", "").strip()
         for seg in segments
         if seg.get("text", "").strip()
@@ -45,7 +45,7 @@ def to_diarized_text(segments):
     for seg in segments:
         spk = seg.get("speaker", "")
         if spk and spk not in speaker_map:
-            speaker_map[spk] = f"דובר {counter}"
+            speaker_map[spk] = f"Speaker {counter}"
             counter += 1
 
     lines = []
@@ -55,7 +55,7 @@ def to_diarized_text(segments):
         text = seg.get("text", "").strip()
         if not text:
             continue
-        name = speaker_map.get(spk, "דובר") if spk else "דובר"
+        name = speaker_map.get(spk, "Speaker") if spk else "Speaker"
         if name != current_speaker:
             lines.append(f"\n{name}:")
             current_speaker = name
