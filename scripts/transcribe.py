@@ -28,8 +28,9 @@ PROBE_URL        = "https://us-central1-whisper-cloud-functions.cloudfunctions.n
 SECS_PER_MIN     = 4      # 1 min of audio ≈ 4s processing
 DIARIZATION_MULT = 1.6    # +60% for speaker separation
 POLL_INTERVAL    = 5      # seconds between polls (large files)
-POLL_INTERVAL_SMALL = 20  # seconds between polls for files < 20 MB
-SMALL_FILE_MB    = 20     # threshold in MB
+POLL_INTERVAL_SMALL = 20  # seconds between polls for short files
+SMALL_FILE_MB    = 20     # threshold in MB (local files)
+SMALL_DURATION_SEC = 1200 # threshold in seconds = 20 min (URL files)
 MAX_FILE_MB      = 2048   # 2 GB upload limit
 MAX_POLLS        = 120    # ~10 minutes max
 
@@ -317,9 +318,13 @@ def main():
         if initial_wait:
             log(f"  Estimated wait time: {initial_wait:.0f} seconds")
 
-        if not is_url and file_size_mb < SMALL_FILE_MB:
+        is_small = (
+            (not is_url and file_size_mb < SMALL_FILE_MB) or
+            (is_url and duration_sec is not None and duration_sec < SMALL_DURATION_SEC)
+        )
+        if is_small:
             poll_interval = POLL_INTERVAL_SMALL
-            log(f"  Small file (<{SMALL_FILE_MB} MB) — polling every {POLL_INTERVAL_SMALL}s")
+            log(f"  Short file — polling every {POLL_INTERVAL_SMALL}s")
         else:
             poll_interval = POLL_INTERVAL
 
