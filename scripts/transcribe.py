@@ -114,7 +114,7 @@ def upload_file(upload_url, file_path, filename):
         log("ERROR: Upload 403 — signed URL may have expired, try again")
         sys.exit(1)
     res.raise_for_status()
-    log("  Upload complete.")
+    log(f"[2/4] Upload complete: {filename}")
 
 
 # ── submit + poll ─────────────────────────────────────────────────────────────
