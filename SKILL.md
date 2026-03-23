@@ -57,9 +57,11 @@ If missing: tell the user to set it (`set TEXTOPS_API_KEY=...` on Windows, `expo
 
 The script handles polling automatically — no need to re-run anything. Watch the terminal output:
 
-1. **After submission**, you'll see:
-   - `[4/4] Waiting X seconds before first check...` — estimated wait based on file duration. Just wait.
-   - Or: `[4/4] Unknown duration — waiting 10 seconds before polling...` — if duration couldn't be detected.
+1. **Upload & submission** (local files only):
+   - `[2/4] Upload complete: filename.mp4` → tell the user: "הקובץ הועלה, מעבד..."
+   - `[3/4] Submitting job...` → job sent to processing queue
+   - `[4/4] Waiting X seconds before first check...` — just wait, no action needed
+   - Or: `[4/4] Unknown duration — waiting 10 seconds before polling...`
 
 2. **During polling**, the script prints every few seconds:
    ```
