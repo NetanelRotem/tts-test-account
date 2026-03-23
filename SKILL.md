@@ -61,12 +61,12 @@ The script handles polling automatically — no need to re-run anything. Watch t
    - `[4/4] Waiting X seconds before first check...` — estimated wait based on file duration. Just wait.
    - Or: `[4/4] Unknown duration — waiting 10 seconds before polling...` — if duration couldn't be detected.
 
-2. **During polling**, the script checks every 5 seconds and prints:
+2. **During polling**, the script prints every few seconds:
    ```
    [1] status: running | 45%
    [2] status: running | 72%
    ```
-   No action needed — just wait.
+   **Update the user every ~20% progress or every ~30 seconds** — e.g. "עדיין מעבד... 45%" or "כמעט סיים, 72%". Don't spam every poll line, just occasional updates so the user knows it's alive.
 
 3. **When done**, you'll see:
    - `Done!` → proceed to Step 4
