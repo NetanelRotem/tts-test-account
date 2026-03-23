@@ -30,31 +30,6 @@ Ask the user **one question only**:
 
 If the user said "תמלל את זה" with a file attached/linked — just run immediately.
 
-## Step 1.5: Validate URL (if input is a URL)
-
-If the user provided a URL (not a local file path), **call `probe_url` before transcribing** to verify access and get metadata.
-
-```bash
-curl -s -X POST https://us-central1-whisper-cloud-functions.cloudfunctions.net/probe_url \
-  -H "Content-Type: application/json" \
-  -H "textops-api-key: $TEXTOPS_API_KEY" \
-  -d '{"url": "<url>"}'
-```
-
-Response fields:
-- `accessible` — can the file be reached without special permissions
-- `transcribable` — is the extension supported (mp3/mp4/wav/m4a/ogg/flac/aac/wma/opus/webm/mkv/avi/mov/wmv/3gp/ts)
-- `duration_seconds` — length in seconds (or `null` if unknown)
-- `source_type` — `"gdrive"` for Google Drive, `"direct"` for everything else
-- `error` — error message or `null`
-
-**Decision tree:**
-- `accessible: false` → Stop. Tell the user: the file is not publicly accessible. If it's a Google Drive link, they need to set sharing to "Anyone with the link".
-- `transcribable: false` → Stop. Tell the user the file extension is not supported for transcription.
-- Both `true` → Proceed to Step 2. If `duration_seconds` is available, mention the estimated file length to the user.
-
----
-
 ## Step 2: Run the transcription script
 
 Use `scripts/transcribe.py` (relative to this skill directory).
@@ -70,7 +45,16 @@ python scripts/transcribe.py \
 
 `--file` accepts both local file paths and HTTP/HTTPS URLs.
 `--min-speakers` / `--max-speakers` — only relevant when `--diarization true`. Default: min=1, max=10.
-`--output-format text` — always use this. The script saves **both** a `.json` file and a `.txt` file every time.
+`--output-format text` — always use this, no need to ask the user. The script always saves **both** a `.json` and a `.txt`.
+
+**Output filenames** (set automatically, no need to specify):
+- Local file: `<basename>_transcript.json` + `<basename>_transcript.txt` — saved next to the original file
+- URL: `<filename-from-server>_transcript.json` + `<filename-from-server>_transcript.txt` — saved in the current directory
+
+**For URLs**, the script automatically calls `probe_url` first (a Cloud Function that checks if the file is publicly accessible and what its duration is). You don't need to call it manually — but you need to understand what it checks so you can explain errors to the user:
+- `ERROR: URL is not publicly accessible` → the file requires login/permissions. If it's Google Drive, tell the user to set sharing to "Anyone with the link".
+- `ERROR: File format is not supported` → the extension isn't transcribable (e.g. `.docx`, `.zip`).
+- `OK | source: gdrive | file: meeting.mp4, 45.3 MB, 342s` → probe passed, script continues.
 
 **Environment variable required**: `TEXTOPS_API_KEY`
 If missing: tell the user to set it (`set TEXTOPS_API_KEY=...` on Windows, `export` on Mac/Linux).
@@ -91,9 +75,9 @@ The script handles polling automatically — no need to re-run anything. Watch t
    No action needed — just wait.
 
 3. **When done**, you'll see:
-   - `✅ Done!` → proceed to Step 4
-   - `❌ Processing error:` → go to Troubleshooting
-   - `⚠️ Maximum wait time exceeded` → use `--job-id` to resume (see Troubleshooting)
+   - `Done!` → proceed to Step 4
+   - `ERROR: Processing failed:` → go to Troubleshooting
+   - `WARNING: Maximum wait time exceeded` → use `--job-id` to resume (see Troubleshooting)
 
 ## Step 3.5: Convert existing JSON (optional)
 
@@ -107,15 +91,15 @@ python scripts/json_to_text.py <file.json> [--output <file.txt>] [--diarization 
 
 ## Step 4: Show the result
 
-After the script finishes, report both output files:
+The script prints the output paths. Look for lines like:
 ```
-📦 transcript.json → <path>
-📄 transcript.txt  → <path>
+[json] <path>/<name>_transcript.json (12,345 bytes)
+[output] <path>/<name>_transcript.txt (4,321 chars, plain text)
 ```
 
-Don't dump the file contents into the chat. If the user wants to see the content, read the file and show a relevant excerpt.
+Report both paths to the user. Don't dump the file contents into the chat. If the user wants to see the content, read the `.txt` file and show a relevant excerpt.
 
-**Validate**: if you see "empty" or "0 bytes" in the output, go to Troubleshooting immediately.
+**Validate**: if you see `0 bytes` or `0 chars` in the output, go to Troubleshooting immediately.
 
 ---
 

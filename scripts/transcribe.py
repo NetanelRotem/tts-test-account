@@ -110,7 +110,7 @@ def upload_file(upload_url, file_path, filename):
     with open(file_path, "rb") as f:
         res = requests.put(upload_url, data=f)
     if res.status_code == 403:
-        log("❌ Upload error 403 — signed URL may have expired, try again")
+        log("ERROR: Upload 403 — signed URL may have expired, try again")
         sys.exit(1)
     res.raise_for_status()
     log("  Upload complete.")
@@ -158,17 +158,17 @@ def poll_job(job_id, initial_wait, poll_interval=POLL_INTERVAL):
         log(f"  [{attempt}] status: {status} | {progress}%")
 
         if data.get("has_error"):
-            log("\n❌ Processing error:")
+            log("\nERROR: Processing failed:")
             log(str(data.get("user_messages") or data))
             sys.exit(1)
 
         if status == "done":
-            log("\n✅ Done!")
+            log("\nDone!")
             return data
 
         time.sleep(interval)
 
-    log("⚠️ Maximum wait time exceeded without result")
+    log("WARNING: Maximum wait time exceeded without result")
     log(f"  You can retry: python transcribe.py --job-id {job_id} ...")
     sys.exit(1)
 
@@ -194,7 +194,7 @@ def extract_segments(data):
         return segments
 
     # not found — print actual structure to help debug
-    log("\n⚠️ No segments found in response. Actual response structure:")
+    log("\nWARNING: No segments found in response. Actual response structure:")
     log(json.dumps(data, ensure_ascii=False, indent=2)[:2000])
     log("\n  Tip: check the key that contains the text and open an issue with this structure")
     return []
@@ -208,7 +208,7 @@ def write_json(data, output_path):
         json.dump(result, f, ensure_ascii=False, indent=2)
     size = os.path.getsize(output_path)
     if size < 10:
-        log(f"⚠️ Empty JSON file ({size} bytes) — API response contained no content")
+        log(f"WARNING: Empty JSON file ({size} bytes) — API response contained no content")
     return size
 
 
@@ -234,13 +234,13 @@ def main():
     args = parser.parse_args()
 
     if not API_KEY:
-        log("❌ Missing TEXTOPS_API_KEY — set the environment variable and try again.")
+        log("ERROR: Missing TEXTOPS_API_KEY — set the environment variable and try again.")
         log("  Windows: set TEXTOPS_API_KEY=your_key")
         log("  Mac/Linux: export TEXTOPS_API_KEY=your_key")
         sys.exit(1)
 
     if not args.file and not args.job_id:
-        log("❌ Required: --file or --job-id")
+        log("ERROR: Required: --file or --job-id")
         sys.exit(1)
 
     has_diarize      = args.diarization.lower() in ("true", "1", "yes")
@@ -265,7 +265,7 @@ def main():
 
     # ── resume from existing job ID ───────────────────────────────────────────
     if args.job_id:
-        log(f"🔄 Resuming with existing Job ID: {args.job_id}")
+        log(f"Resuming with existing Job ID: {args.job_id}")
         data = poll_job(args.job_id, initial_wait=None)
     else:
         file_arg = args.file
@@ -275,11 +275,11 @@ def main():
             log(f"[1/4] Probing URL: {file_arg}")
             probe = probe_url(file_arg)
             if not probe.get("accessible"):
-                log(f"❌ URL is not publicly accessible: {probe.get('error') or 'unknown error'}")
+                log(f"ERROR: URL is not publicly accessible: {probe.get('error') or 'unknown error'}")
                 log("  If this is a Google Drive link, set sharing to 'Anyone with the link'.")
                 sys.exit(1)
             if not probe.get("transcribable"):
-                log("❌ File format is not supported for transcription.")
+                log("ERROR: File format is not supported for transcription.")
                 log("  Supported formats: mp3/mp4/wav/m4a/ogg/flac/aac/wma/opus/webm/mkv/avi/mov/wmv/3gp/ts")
                 sys.exit(1)
 
@@ -288,9 +288,9 @@ def main():
             duration_sec   = probe.get("duration_seconds")
             size_bytes     = probe.get("size_bytes")
 
-            size_str = f", {size_bytes / (1024*1024):.1f} MB" if size_bytes else ""
+            size_str = f", {int(size_bytes) / (1024*1024):.1f} MB" if size_bytes else ""
             dur_str  = f", {duration_sec:.0f}s ({duration_sec/60:.1f} min)" if duration_sec else ", duration unknown"
-            log(f"  ✔ Accessible | source: {source_type} | file: {probe_filename}{size_str}{dur_str}")
+            log(f"  OK | source: {source_type} | file: {probe_filename}{size_str}{dur_str}")
             log("[2/4] URL verified — skipping upload step")
 
             # finalize output_path now that we have the filename
@@ -304,7 +304,7 @@ def main():
             filename     = os.path.basename(file_arg)
             file_size_mb = os.path.getsize(file_arg) / (1024 * 1024)
             if file_size_mb > MAX_FILE_MB:
-                log(f"❌ File is too large ({file_size_mb:.0f} MB). Maximum allowed size is {MAX_FILE_MB} MB (2 GB).")
+                log(f"ERROR: File is too large ({file_size_mb:.0f} MB). Maximum allowed size is {MAX_FILE_MB} MB (2 GB).")
                 log("  Convert to a smaller format first, e.g.:")
                 log("    ffmpeg -i input.mp4 -vn -ar 44100 -ac 2 -b:a 128k output.mp3")
                 sys.exit(1)
@@ -329,7 +329,7 @@ def main():
     # ── always save JSON first ────────────────────────────────────────────────
     json_path = os.path.splitext(output_path)[0] + ".json"
     size = write_json(data, json_path)
-    log(f"📦 JSON: {json_path} ({size:,} bytes)")
+    log(f"[json] {json_path} ({size:,} bytes)")
 
     # ── convert to text if requested ──────────────────────────────────────────
     if output_format == "text":
@@ -345,10 +345,10 @@ def main():
         if result.stdout:
             log(result.stdout.strip())
         if result.returncode != 0 and result.stderr:
-            log(f"⚠️ {result.stderr.strip()}")
+            log(f"WARNING: {result.stderr.strip()}")
         output_path = txt_path
 
-    log(f"\n✔ Done. Output file: {output_path}")
+    log(f"\nDone. Output file: {output_path}")
 
 
 if __name__ == "__main__":
