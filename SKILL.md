@@ -9,26 +9,20 @@ Transcribe audio/video files using the TextOps API.
 
 ## Step 1: Gather info from the user
 
-Ask the user **one question only**:
+If the user didn't provide a file yet, ask for it. Once you have the file, ask **one question**:
 
-1. **קובץ / File**: What is the file path or URL?
-   - Local path (e.g. `C:\videos\interview.mp4`)
-   - Any HTTP/HTTPS URL pointing directly to the file
-   - Or: they can upload the file directly here in the chat
+> "יש יותר מדובר אחד בהקלטה? (הפרדת דוברים לוקחת קצת יותר זמן)"
 
-**Then ask about diarization** (speaker separation) — in the same message:
-- Default: **no diarization** (single block of text)
-- If the user mentions multiple speakers or wants speaker labels → diarization = true
-  - Ask: **כמה דוברים בערך?** — e.g. "2", "3–4", "לא יודע"
-  - Map: exact number → `--min-speakers N --max-speakers N`; range "3–4" → min=3 max=4; unknown → leave defaults (min=1 max=10)
+- **No / דובר אחד** → `--diarization false`
+- **Yes / כן** → ask how many: exact number → `--min-speakers N --max-speakers N`; range "3–4" → min=3 max=4; unknown → leave defaults (min=1 max=10)
 
-**Skip questions the user already answered.** Read their message carefully:
+**Skip the question if the user already answered:**
 - "דובר אחד", "one speaker", "no diarization" → diarization = false
 - "שני דוברים", "two speakers", "with speakers" → diarization = true, min=2 max=2
-- "timestamps פר מילה", "word level", "כתוביות מדויקות", "word timestamps" → `--word-timestamps true` (slower, no diarization)
-- URL or file path already in the message → don't ask for the file again
+- "timestamps פר מילה", "word level", "כתוביות מדויקות" → `--word-timestamps true` (slower, no diarization)
+- File attached/linked with "תמלל את זה" and no speaker info → ask only about speakers
 
-If the user said "תמלל את זה" with a file attached/linked — just run immediately.
+**Never ask about output format** — always `--output-format text`.
 
 ## Step 2: Run the transcription script
 
