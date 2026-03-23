@@ -23,10 +23,14 @@ API_KEY = os.environ.get("TEXTOPS_API_KEY", "")
 GET_UPLOAD_URL   = "https://get-upload-signed-url-hjqzix372q-uc.a.run.app"
 SUBMIT_MODAL_URL = "https://us-central1-whisper-cloud-functions.cloudfunctions.net/submit_modal_job"
 CHECK_JOB_URL    = "https://us-central1-whisper-cloud-functions.cloudfunctions.net/check_modal_job"
+PROBE_URL        = "https://us-central1-whisper-cloud-functions.cloudfunctions.net/probe_url"
 
 SECS_PER_MIN     = 4      # 1 min of audio ≈ 4s processing
 DIARIZATION_MULT = 1.6    # +60% for speaker separation
-POLL_INTERVAL    = 5      # seconds between polls
+POLL_INTERVAL    = 5      # seconds between polls (large files)
+POLL_INTERVAL_SMALL = 20  # seconds between polls for files < 20 MB
+SMALL_FILE_MB    = 20     # threshold in MB
+MAX_FILE_MB      = 2048   # 2 GB upload limit
 MAX_POLLS        = 120    # ~10 minutes max
 
 
@@ -81,6 +85,16 @@ def calc_initial_wait(duration_sec, has_diarization):
     return wait * 0.8  # start checking 20% before estimated finish
 
 
+# ── probe URL ────────────────────────────────────────────────────────────────
+
+def probe_url(url):
+    """Check accessibility and metadata of a remote audio/video URL."""
+    res = requests.post(PROBE_URL, json={"url": url},
+                        headers={"textops-api-key": API_KEY})
+    res.raise_for_status()
+    return res.json()
+
+
 # ── upload (for local files) ─────────────────────────────────────────────────
 
 def get_signed_urls(filename):
@@ -122,15 +136,15 @@ def submit_job(download_url, has_diarization, word_timestamps=False, min_speaker
     return job_id
 
 
-def poll_job(job_id, initial_wait):
+def poll_job(job_id, initial_wait, poll_interval=POLL_INTERVAL):
     if initial_wait is not None:
         log(f"[4/4] Waiting {initial_wait:.0f} seconds before first check...")
         time.sleep(initial_wait)
-        interval = POLL_INTERVAL
+        interval = poll_interval
     else:
         log("[4/4] Unknown duration — waiting 10 seconds before polling...")
         time.sleep(10)
-        interval = 4
+        interval = poll_interval
 
     for attempt in range(1, MAX_POLLS + 1):
         res = requests.post(CHECK_JOB_URL,
@@ -242,8 +256,8 @@ def main():
         ext = ".json" if output_format == "json" else ".txt"
         output_path = os.path.join(os.getcwd(), f"{args.job_id}_transcript{ext}")
     elif args.file.startswith("http://") or args.file.startswith("https://"):
-        ext = ".json" if output_format == "json" else ".txt"
-        output_path = os.path.join(os.getcwd(), "transcript" + ext)
+        # output_path for URLs is finalized after probe (filename may come from there)
+        output_path = None
     else:
         base = os.path.splitext(args.file)[0]
         ext  = ".json" if output_format == "json" else ".txt"
@@ -258,11 +272,42 @@ def main():
         is_url   = file_arg.startswith("http://") or file_arg.startswith("https://")
 
         if is_url:
-            log(f"URL detected: {file_arg}")
+            log(f"[1/4] Probing URL: {file_arg}")
+            probe = probe_url(file_arg)
+            if not probe.get("accessible"):
+                log(f"❌ URL is not publicly accessible: {probe.get('error') or 'unknown error'}")
+                log("  If this is a Google Drive link, set sharing to 'Anyone with the link'.")
+                sys.exit(1)
+            if not probe.get("transcribable"):
+                log("❌ File format is not supported for transcription.")
+                log("  Supported formats: mp3/mp4/wav/m4a/ogg/flac/aac/wma/opus/webm/mkv/avi/mov/wmv/3gp/ts")
+                sys.exit(1)
+
+            probe_filename = probe.get("filename") or "transcript"
+            source_type    = probe.get("source_type", "direct")
+            duration_sec   = probe.get("duration_seconds")
+            size_bytes     = probe.get("size_bytes")
+
+            size_str = f", {size_bytes / (1024*1024):.1f} MB" if size_bytes else ""
+            dur_str  = f", {duration_sec:.0f}s ({duration_sec/60:.1f} min)" if duration_sec else ", duration unknown"
+            log(f"  ✔ Accessible | source: {source_type} | file: {probe_filename}{size_str}{dur_str}")
+            log("[2/4] URL verified — skipping upload step")
+
+            # finalize output_path now that we have the filename
+            if not output_path:
+                base = os.path.splitext(probe_filename)[0]
+                ext  = ".json" if output_format == "json" else ".txt"
+                output_path = os.path.join(os.getcwd(), base + "_transcript" + ext)
+
             download_url = file_arg
-            duration_sec = None
         else:
             filename     = os.path.basename(file_arg)
+            file_size_mb = os.path.getsize(file_arg) / (1024 * 1024)
+            if file_size_mb > MAX_FILE_MB:
+                log(f"❌ File is too large ({file_size_mb:.0f} MB). Maximum allowed size is {MAX_FILE_MB} MB (2 GB).")
+                log("  Convert to a smaller format first, e.g.:")
+                log("    ffmpeg -i input.mp4 -vn -ar 44100 -ac 2 -b:a 128k output.mp3")
+                sys.exit(1)
             duration_sec = get_duration_seconds(file_arg)
             urls         = get_signed_urls(filename)
             upload_file(urls["upload_url"], file_arg, filename)
@@ -272,8 +317,14 @@ def main():
         if initial_wait:
             log(f"  Estimated wait time: {initial_wait:.0f} seconds")
 
+        if not is_url and file_size_mb < SMALL_FILE_MB:
+            poll_interval = POLL_INTERVAL_SMALL
+            log(f"  Small file (<{SMALL_FILE_MB} MB) — polling every {POLL_INTERVAL_SMALL}s")
+        else:
+            poll_interval = POLL_INTERVAL
+
         job_id = submit_job(download_url, has_diarize, has_word_ts, min_speakers, max_speakers)
-        data   = poll_job(job_id, initial_wait)
+        data   = poll_job(job_id, initial_wait, poll_interval)
 
     # ── always save JSON first ────────────────────────────────────────────────
     json_path = os.path.splitext(output_path)[0] + ".json"

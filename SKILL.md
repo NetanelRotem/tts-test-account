@@ -9,29 +9,51 @@ Transcribe audio/video files using the TextOps API.
 
 ## Step 1: Gather info from the user
 
-Ask the user these two questions **together in one message** — don't ask one at a time:
+Ask the user **one question only**:
 
 1. **קובץ / File**: What is the file path or URL?
    - Local path (e.g. `C:\videos\interview.mp4`)
-   - Google Drive / network URL
+   - Any HTTP/HTTPS URL pointing directly to the file
    - Or: they can upload the file directly here in the chat
 
-2. **פורמט הפלט / Output format** — ask them to choose:
-   - **טקסט רגיל** — one long block of text, everything together
-   - **JSON עם דוברים** — structured JSON with speaker separation (diarization), great when there are 2+ people talking
-
-   **If they choose diarization**, ask one follow-up question in the same message:
-   - **כמה דוברים בערך?** — e.g. "2", "3–4", "לא יודע"
-   - Map the answer: exact number → set both `--min-speakers` and `--max-speakers` to that number; a range like "3–4" → min=3 max=4; unknown → leave defaults (min=1 max=10)
+**Then ask about diarization** (speaker separation) — in the same message:
+- Default: **no diarization** (single block of text)
+- If the user mentions multiple speakers or wants speaker labels → diarization = true
+  - Ask: **כמה דוברים בערך?** — e.g. "2", "3–4", "לא יודע"
+  - Map: exact number → `--min-speakers N --max-speakers N`; range "3–4" → min=3 max=4; unknown → leave defaults (min=1 max=10)
 
 **Skip questions the user already answered.** Read their message carefully:
-- "רק את הטקסט", "plain text", "clean text" → text format, no diarization
-- "דובר אחד", "one speaker", "no diarization" → text format, no diarization
+- "דובר אחד", "one speaker", "no diarization" → diarization = false
 - "שני דוברים", "two speakers", "with speakers" → diarization = true, min=2 max=2
-- "timestamps פר מילה", "word level", "כתוביות מדויקות", "word timestamps" → `--word-timestamps true` (note: slower, no diarization)
+- "timestamps פר מילה", "word level", "כתוביות מדויקות", "word timestamps" → `--word-timestamps true` (slower, no diarization)
 - URL or file path already in the message → don't ask for the file again
 
-If the user said "תמלל את זה" with a file attached/linked — just confirm format and run.
+If the user said "תמלל את זה" with a file attached/linked — just run immediately.
+
+## Step 1.5: Validate URL (if input is a URL)
+
+If the user provided a URL (not a local file path), **call `probe_url` before transcribing** to verify access and get metadata.
+
+```bash
+curl -s -X POST https://us-central1-whisper-cloud-functions.cloudfunctions.net/probe_url \
+  -H "Content-Type: application/json" \
+  -H "textops-api-key: $TEXTOPS_API_KEY" \
+  -d '{"url": "<url>"}'
+```
+
+Response fields:
+- `accessible` — can the file be reached without special permissions
+- `transcribable` — is the extension supported (mp3/mp4/wav/m4a/ogg/flac/aac/wma/opus/webm/mkv/avi/mov/wmv/3gp/ts)
+- `duration_seconds` — length in seconds (or `null` if unknown)
+- `source_type` — `"gdrive"` for Google Drive, `"direct"` for everything else
+- `error` — error message or `null`
+
+**Decision tree:**
+- `accessible: false` → Stop. Tell the user: the file is not publicly accessible. If it's a Google Drive link, they need to set sharing to "Anyone with the link".
+- `transcribable: false` → Stop. Tell the user the file extension is not supported for transcription.
+- Both `true` → Proceed to Step 2. If `duration_seconds` is available, mention the estimated file length to the user.
+
+---
 
 ## Step 2: Run the transcription script
 
@@ -43,16 +65,35 @@ python scripts/transcribe.py \
   --diarization <true|false> \
   --min-speakers <N> \
   --max-speakers <N> \
-  --output-format <json|text> \
-  --output-path "<optional>"
+  --output-format text
 ```
 
+`--file` accepts both local file paths and HTTP/HTTPS URLs.
 `--min-speakers` / `--max-speakers` — only relevant when `--diarization true`. Default: min=1, max=10.
-
-**The script always saves a JSON file first**, then converts to text if requested. You'll always get a `.json` backup regardless of format choice.
+`--output-format text` — always use this. The script saves **both** a `.json` file and a `.txt` file every time.
 
 **Environment variable required**: `TEXTOPS_API_KEY`
 If missing: tell the user to set it (`set TEXTOPS_API_KEY=...` on Windows, `export` on Mac/Linux).
+
+## Step 3: Monitor the process
+
+The script handles polling automatically — no need to re-run anything. Watch the terminal output:
+
+1. **After submission**, you'll see:
+   - `[4/4] Waiting X seconds before first check...` — estimated wait based on file duration. Just wait.
+   - Or: `[4/4] Unknown duration — waiting 10 seconds before polling...` — if duration couldn't be detected.
+
+2. **During polling**, the script checks every 5 seconds and prints:
+   ```
+   [1] status: running | 45%
+   [2] status: running | 72%
+   ```
+   No action needed — just wait.
+
+3. **When done**, you'll see:
+   - `✅ Done!` → proceed to Step 4
+   - `❌ Processing error:` → go to Troubleshooting
+   - `⚠️ Maximum wait time exceeded` → use `--job-id` to resume (see Troubleshooting)
 
 ## Step 3.5: Convert existing JSON (optional)
 
@@ -66,11 +107,11 @@ python scripts/json_to_text.py <file.json> [--output <file.txt>] [--diarization 
 
 ## Step 4: Show the result
 
-After the script finishes, report in **one line**:
+After the script finishes, report both output files:
 ```
-📄 transcript.json (X MB, Y segments) → <path>
+📦 transcript.json → <path>
+📄 transcript.txt  → <path>
 ```
-Or for text: `📄 transcript.txt (X,XXX chars) → <path>`
 
 Don't dump the file contents into the chat. If the user wants to see the content, read the file and show a relevant excerpt.
 
@@ -103,7 +144,7 @@ If the process was interrupted or the output file was lost, you can recover usin
 python scripts/transcribe.py \
   --job-id <JOB_ID> \
   --diarization <true|false> \
-  --output-format <json|text>
+  --output-format text
 ```
 
 To query a job directly (raw API):
@@ -122,7 +163,7 @@ curl -X POST https://us-central1-whisper-cloud-functions.cloudfunctions.net/chec
 
 ### Script printed "Done!" but the file is empty
 
-Run with `--output-format json` and `--job-id` to see the raw API response and find where the content actually lives.
+Run with `--job-id` to re-fetch and inspect the raw `.json` output for where the content actually lives.
 
 ---
 
