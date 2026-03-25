@@ -20,10 +20,12 @@ sys.stderr.reconfigure(encoding="utf-8")
 
 API_KEY = os.environ.get("TEXTOPS_API_KEY", "")
 
-GET_UPLOAD_URL   = "https://get-upload-signed-url-hjqzix372q-uc.a.run.app"
-SUBMIT_MODAL_URL = "https://us-central1-whisper-cloud-functions.cloudfunctions.net/submit_modal_job"
-CHECK_JOB_URL    = "https://us-central1-whisper-cloud-functions.cloudfunctions.net/check_modal_job"
-PROBE_URL        = "https://us-central1-whisper-cloud-functions.cloudfunctions.net/probe_url"
+
+
+GET_UPLOAD_URL   = "https://text-ops-subs.com/api/v2/upload-url"
+SUBMIT_MODAL_URL = "https://text-ops-subs.com/api/v2/transcribe"
+CHECK_JOB_URL    = "https://text-ops-subs.com/api/v2/transcribe-status"
+PROBE_URL        = "https://text-ops-subs.com/api/v2/probe"
 
 SECS_PER_MIN     = 4      # 1 min of audio ≈ 4s processing
 DIARIZATION_MULT = 1.6    # +60% for speaker separation
