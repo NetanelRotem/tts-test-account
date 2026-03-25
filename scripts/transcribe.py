@@ -27,8 +27,8 @@ PROBE_URL        = "https://us-central1-whisper-cloud-functions.cloudfunctions.n
 
 SECS_PER_MIN     = 4      # 1 min of audio ≈ 4s processing
 DIARIZATION_MULT = 1.6    # +60% for speaker separation
-POLL_INTERVAL    = 5      # seconds between polls (large files)
-POLL_INTERVAL_SMALL = 20  # seconds between polls for short files
+POLL_INTERVAL    = 15     # seconds between polls (large files)
+POLL_INTERVAL_SMALL = 5   # seconds between polls for short files
 SMALL_FILE_MB    = 20     # threshold in MB (local files)
 SMALL_DURATION_SEC = 1200 # threshold in seconds = 20 min (URL files)
 MAX_FILE_MB      = 2048   # 2 GB upload limit
@@ -236,6 +236,7 @@ def main():
 
     if not API_KEY:
         log("ERROR: Missing TEXTOPS_API_KEY — set the environment variable and try again.")
+        log("  Get your API key at: https://text-ops-subs.com/api/keys")
         log("  Windows: set TEXTOPS_API_KEY=your_key")
         log("  Mac/Linux: export TEXTOPS_API_KEY=your_key")
         sys.exit(1)

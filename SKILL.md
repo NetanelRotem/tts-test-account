@@ -51,7 +51,7 @@ python scripts/transcribe.py \
 - `OK | source: gdrive | file: meeting.mp4, 45.3 MB, 342s` → probe passed, script continues.
 
 **Environment variable required**: `TEXTOPS_API_KEY`
-If missing: tell the user to set it (`set TEXTOPS_API_KEY=...` on Windows, `export` on Mac/Linux).
+If missing: tell the user to get their key from https://text-ops-subs.com/api/keys, then set it (`set TEXTOPS_API_KEY=your_key` on Windows, `export TEXTOPS_API_KEY=your_key` on Mac/Linux).
 
 ## Step 3: Monitor the process
 
