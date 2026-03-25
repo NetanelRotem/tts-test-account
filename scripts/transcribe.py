@@ -34,13 +34,20 @@ POLL_INTERVAL_SMALL = 5   # seconds between polls for short files
 SMALL_FILE_MB    = 20     # threshold in MB (local files)
 SMALL_DURATION_SEC = 1200 # threshold in seconds = 20 min (URL files)
 MAX_FILE_MB      = 2048   # 2 GB upload limit
-MAX_POLLS        = 120    # ~10 minutes max
+MAX_POLLS_LARGE  = 60     # large files: 60 × 15s = 15 min max
+MAX_POLLS_SMALL  = 180    # small files: 180 × 5s = 15 min max
 
 
+
+_start_time = None
 
 def log(msg):
     """Print with immediate flush so output streams in real time."""
     print(msg, flush=True)
+
+def elapsed():
+    """Seconds elapsed since script start, as integer."""
+    return int(time.time() - _start_time) if _start_time else 0
 
 
 # ── duration detection ───────────────────────────────────────────────────────
@@ -101,7 +108,7 @@ def probe_url(url):
 # ── upload (for local files) ─────────────────────────────────────────────────
 
 def get_signed_urls(filename):
-    log(f"[1/4] Getting signed URL for: {filename}")
+    log(f"[UPLOAD] Getting signed URL for: {filename}")
     res = requests.post(GET_UPLOAD_URL, json={"filename": filename},
                         headers={"textops-api-key": API_KEY})
     res.raise_for_status()
@@ -109,14 +116,15 @@ def get_signed_urls(filename):
 
 
 def upload_file(upload_url, file_path, filename):
-    log(f"[2/4] Uploading file: {filename}...")
+    size_mb = os.path.getsize(file_path) / (1024 * 1024)
+    log(f"[UPLOAD] Uploading: {filename} ({size_mb:.1f} MB)...")
     with open(file_path, "rb") as f:
         res = requests.put(upload_url, data=f)
     if res.status_code == 403:
         log("ERROR: Upload 403 — signed URL may have expired, try again")
         sys.exit(1)
     res.raise_for_status()
-    log(f"[2/4] Upload complete: {filename}")
+    log(f"[UPLOAD] Complete: {filename}")
 
 
 # ── submit + poll ─────────────────────────────────────────────────────────────
@@ -128,28 +136,27 @@ def submit_job(download_url, has_diarization, word_timestamps=False, min_speaker
         "max_speakers": max_speakers,
         "word_timestamps": word_timestamps,
     }
-    log("[3/4] Submitting job for processing...")
+    log("[JOB] Submitting...")
     res = requests.post(SUBMIT_MODAL_URL,
                         json={"download_url": download_url, "params": params},
                         headers={"textops-api-key": API_KEY})
     res.raise_for_status()
     job_id = res.json()["textopsJobId"]
-    log(f"  Job ID: {job_id}")
-    log(f"  Save this Job ID! If the process is interrupted, resume with: --job-id {job_id}")
+    log(f"[JOB] ID: {job_id}")
+    log(f"[JOB] Tip: if interrupted, resume with --job-id {job_id}")
     return job_id
 
 
-def poll_job(job_id, initial_wait, poll_interval=POLL_INTERVAL):
+def poll_job(job_id, initial_wait, poll_interval=POLL_INTERVAL, max_polls=MAX_POLLS_LARGE):
     if initial_wait is not None:
-        log(f"[4/4] Waiting {initial_wait:.0f} seconds before first check...")
+        log(f"[WAIT] First check in {initial_wait:.0f}s (estimated processing time)")
         time.sleep(initial_wait)
-        interval = poll_interval
     else:
-        log("[4/4] Unknown duration — waiting 10 seconds before polling...")
+        log("[WAIT] Duration unknown — first check in 10s")
         time.sleep(10)
-        interval = poll_interval
 
-    for attempt in range(1, MAX_POLLS + 1):
+    last_progress = -1
+    for attempt in range(1, max_polls + 1):
         res = requests.post(CHECK_JOB_URL,
                             json={"textopsJobId": job_id},
                             headers={"textops-api-key": API_KEY})
@@ -158,21 +165,25 @@ def poll_job(job_id, initial_wait, poll_interval=POLL_INTERVAL):
 
         status   = data.get("status", "?")
         progress = data.get("progress", 0)
-        log(f"  [{attempt}] status: {status} | {progress}%")
 
         if data.get("has_error"):
-            log("\nERROR: Processing failed:")
-            log(str(data.get("user_messages") or data))
+            log(f"ERROR: Processing failed: {data.get('user_messages') or status}")
             sys.exit(1)
 
-        if status == "done":
-            log("\nDone!")
+        has_segments = bool(data.get("result", {}).get("segments"))
+        if status == "done" or has_segments:
+            log(f"[DONE] Processing complete ({elapsed()}s total)")
             return data
 
-        time.sleep(interval)
+        # print progress only when it changes (avoid log spam)
+        if progress != last_progress:
+            log(f"[PROGRESS] {progress}% ({elapsed()}s elapsed)")
+            last_progress = progress
 
-    log("WARNING: Maximum wait time exceeded without result")
-    log(f"  You can retry: python transcribe.py --job-id {job_id} ...")
+        time.sleep(poll_interval)
+
+    log(f"WARNING: Timeout after {elapsed()}s — job may still be running")
+    log(f"WARNING: Resume with: python transcribe.py --job-id {job_id} ...")
     sys.exit(1)
 
 
@@ -247,6 +258,9 @@ def main():
         log("ERROR: Required: --file or --job-id")
         sys.exit(1)
 
+    global _start_time
+    _start_time = time.time()
+
     has_diarize      = args.diarization.lower() in ("true", "1", "yes")
     has_word_ts      = args.word_timestamps.lower() in ("true", "1", "yes")
     min_speakers     = args.min_speakers
@@ -269,14 +283,14 @@ def main():
 
     # ── resume from existing job ID ───────────────────────────────────────────
     if args.job_id:
-        log(f"Resuming with existing Job ID: {args.job_id}")
+        log(f"[JOB] Resuming with existing Job ID: {args.job_id}")
         data = poll_job(args.job_id, initial_wait=None)
     else:
         file_arg = args.file
         is_url   = file_arg.startswith("http://") or file_arg.startswith("https://")
 
         if is_url:
-            log(f"[1/4] Probing URL: {file_arg}")
+            log(f"[PROBE] Checking URL: {file_arg}")
             probe = probe_url(file_arg)
             if not probe.get("accessible"):
                 log(f"ERROR: URL is not publicly accessible: {probe.get('error') or 'unknown error'}")
@@ -294,8 +308,7 @@ def main():
 
             size_str = f", {int(size_bytes) / (1024*1024):.1f} MB" if size_bytes else ""
             dur_str  = f", {duration_sec:.0f}s ({duration_sec/60:.1f} min)" if duration_sec else ", duration unknown"
-            log(f"  OK | source: {source_type} | file: {probe_filename}{size_str}{dur_str}")
-            log("[2/4] URL verified — skipping upload step")
+            log(f"[PROBE] OK | source: {source_type} | file: {probe_filename}{size_str}{dur_str}")
 
             # finalize output_path now that we have the filename
             if not output_path:
@@ -304,6 +317,7 @@ def main():
                 output_path = os.path.join(os.getcwd(), base + "_transcript" + ext)
 
             download_url = file_arg
+            file_size_mb = size_bytes / (1024 * 1024) if size_bytes else 0
         else:
             filename     = os.path.basename(file_arg)
             file_size_mb = os.path.getsize(file_arg) / (1024 * 1024)
@@ -318,8 +332,6 @@ def main():
             download_url = urls["download_url"]
 
         initial_wait = calc_initial_wait(duration_sec, has_diarize)
-        if initial_wait:
-            log(f"  Estimated wait time: {initial_wait:.0f} seconds")
 
         is_small = (
             (not is_url and file_size_mb < SMALL_FILE_MB) or
@@ -327,36 +339,33 @@ def main():
         )
         if is_small:
             poll_interval = POLL_INTERVAL_SMALL
-            log(f"  Short file — polling every {POLL_INTERVAL_SMALL}s")
+            max_polls = MAX_POLLS_SMALL
         else:
             poll_interval = POLL_INTERVAL
+            max_polls = MAX_POLLS_LARGE
 
         job_id = submit_job(download_url, has_diarize, has_word_ts, min_speakers, max_speakers)
-        data   = poll_job(job_id, initial_wait, poll_interval)
+        data   = poll_job(job_id, initial_wait, poll_interval, max_polls)
 
     # ── always save JSON first ────────────────────────────────────────────────
     json_path = os.path.splitext(output_path)[0] + ".json"
     size = write_json(data, json_path)
-    log(f"[json] {json_path} ({size:,} bytes)")
+    log(f"[FILE] JSON: {json_path} ({size:,} bytes)")
 
-    # ── convert to text if requested ──────────────────────────────────────────
-    if output_format == "text":
-        import subprocess
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        txt_path = os.path.splitext(output_path)[0] + ".txt"
-        result = subprocess.run(
-            [sys.executable, os.path.join(script_dir, "json_to_text.py"),
-             json_path, "--output", txt_path,
-             "--diarization", "true" if has_diarize else "false"],
-            capture_output=True, text=True
-        )
-        if result.stdout:
-            log(result.stdout.strip())
-        if result.returncode != 0 and result.stderr:
-            log(f"WARNING: {result.stderr.strip()}")
-        output_path = txt_path
-
-    log(f"\nDone. Output file: {output_path}")
+    # ── always convert to text as well ───────────────────────────────────────
+    import subprocess
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    txt_path = os.path.splitext(output_path)[0] + ".txt"
+    result = subprocess.run(
+        [sys.executable, os.path.join(script_dir, "json_to_text.py"),
+         json_path, "--output", txt_path,
+         "--diarization", "true" if has_diarize else "false"],
+        capture_output=True, text=True
+    )
+    if result.stdout:
+        log(result.stdout.strip())
+    if result.returncode != 0 and result.stderr:
+        log(f"WARNING: {result.stderr.strip()}")
 
 
 if __name__ == "__main__":

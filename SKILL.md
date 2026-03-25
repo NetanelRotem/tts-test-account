@@ -39,7 +39,7 @@ python scripts/transcribe.py \
 
 `--file` accepts both local file paths and HTTP/HTTPS URLs.
 `--min-speakers` / `--max-speakers` — only relevant when `--diarization true`. Default: min=1, max=10.
-`--output-format text` — always use this, no need to ask the user. The script always saves **both** a `.json` and a `.txt`.
+`--output-format text` — always use this. The script always saves **both** a `.json` and a `.txt`, regardless of this flag.
 
 **Output filenames** (set automatically, no need to specify):
 - Local file: `<basename>_transcript.json` + `<basename>_transcript.txt` — saved next to the original file
@@ -55,25 +55,22 @@ If missing: tell the user to get their key from https://text-ops-subs.com/api/ke
 
 ## Step 3: Monitor the process
 
-The script handles polling automatically — no need to re-run anything. Watch the terminal output:
+The script uses consistent `[TAG]` prefixes — scan for these while it runs:
 
-1. **Upload & submission** (local files only):
-   - `[2/4] Upload complete: filename.mp4` → tell the user: "הקובץ הועלה, מעבד..."
-   - `[3/4] Submitting job...` → job sent to processing queue
-   - `[4/4] Waiting X seconds before first check...` — just wait, no action needed
-   - Or: `[4/4] Unknown duration — waiting 10 seconds before polling...`
+| Line you'll see | What to tell the user |
+|---|---|
+| `[PROBE] OK \| ...` | URL is accessible, continuing |
+| `[UPLOAD] Uploading: file.mp4 (X MB)...` | "Uploading your file..." |
+| `[UPLOAD] Complete: file.mp4` | "Uploaded, sending for processing..." |
+| `[JOB] ID: abc123` | Note this ID in case you need to recover |
+| `[WAIT] First check in Xs` | "Processing, waiting for result..." |
+| `[PROGRESS] 45% (30s elapsed)` | "Still processing... 45%" |
+| `[PROGRESS] 75% (55s elapsed)` | "Almost done, 75%" |
+| `[DONE] Processing complete (Xs total)` | Proceed to Step 4 |
+| `ERROR: ...` | Go to Troubleshooting |
+| `WARNING: Timeout...` | Use `--job-id` to resume |
 
-2. **During polling**, the script prints every few seconds:
-   ```
-   [1] status: running | 45%
-   [2] status: running | 72%
-   ```
-   **Update the user every ~20% progress or every ~30 seconds** — e.g. "עדיין מעבד... 45%" or "כמעט סיים, 72%". Don't spam every poll line, just occasional updates so the user knows it's alive.
-
-3. **When done**, you'll see:
-   - `Done!` → proceed to Step 4
-   - `ERROR: Processing failed:` → go to Troubleshooting
-   - `WARNING: Maximum wait time exceeded` → use `--job-id` to resume (see Troubleshooting)
+**Update the user at meaningful jumps (~25% each)** — don't relay every `[PROGRESS]` line. The user mainly wants to know it's still running and roughly where it is.
 
 ## Step 3.5: Convert existing JSON (optional)
 
@@ -89,8 +86,8 @@ python scripts/json_to_text.py <file.json> [--output <file.txt>] [--diarization 
 
 The script prints the output paths. Look for lines like:
 ```
-[json] <path>/<name>_transcript.json (12,345 bytes)
-[output] <path>/<name>_transcript.txt (4,321 chars, plain text)
+[FILE] JSON: <path>/<name>_transcript.json (12,345 bytes)
+[FILE] TEXT: <path>/<name>_transcript.txt (4,321 chars, plain text)
 ```
 
 Report both paths to the user. Don't dump the file contents into the chat. If the user wants to see the content, read the `.txt` file and show a relevant excerpt.
@@ -142,7 +139,7 @@ curl -X POST https://us-central1-whisper-cloud-functions.cloudfunctions.net/chec
 
 ### Process took too long / timeout
 
-- The script polls for up to ~10 minutes (120 polls × 5s)
+- The script polls for up to ~15 minutes (60 polls × 15s for large files, 120 polls × 5s for small files)
 - For files longer than 60 minutes with diarization, this may not be enough
 - Use `--job-id` to resume polling after a timeout
 

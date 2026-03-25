@@ -106,7 +106,7 @@ def main():
 
     char_count = len(content)
     mode = "speakers" if use_diarization else "plain text"
-    print(f"[output] {output_path} ({char_count:,} chars, {mode})", flush=True)
+    print(f"[FILE] TEXT: {output_path} ({char_count:,} chars, {mode})", flush=True)
 
 
 if __name__ == "__main__":
