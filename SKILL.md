@@ -3,6 +3,10 @@ name: transcribe
 description: Transcribe audio or video files using the TextOps/Modal API. Use this skill whenever the user wants to transcribe a video or audio file, mentions an mp4/mp3/wav/m4a file and wants text out of it, asks for transcription or תמלול, or wants to convert spoken audio to text. Always trigger this skill even if the user just says "תמלל את זה" or "I want to transcribe this file".
 ---
 
+> **Requirements**
+> - `TEXTOPS_API_KEY` environment variable must be set (see Step 2 for instructions).
+> - `ffprobe` (part of ffmpeg) or `moviepy` — optional, used to estimate processing time for local files. If neither is installed the script still works; it just skips the time estimate.
+
 # Transcription Skill
 
 Transcribe audio/video files using the TextOps API.
